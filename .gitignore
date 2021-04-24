@@ -1,0 +1,7 @@
+data/
+venv/
+__pycache__
+data.nosync/
+.idea
+featurization/.dict.p.icloud
+.DS_STORE 
