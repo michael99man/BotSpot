@@ -1,3 +1,5 @@
+from torch.utils.data import Dataset
+
 class ChungusSet(Dataset):
     def __init__(self, words, subs, karmas, mods, labels):
         self.words = words
