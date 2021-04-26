@@ -205,7 +205,7 @@ def evaluate_model(model):
 
 if __name__ == "__main__":
     sys.path.append('../featurization/')
-    from featurizer import ChungusSet
+    import ChungusSet
     init_model()
 
 class EpochSaver(CallbackAny2Vec):
