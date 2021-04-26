@@ -30,7 +30,7 @@ karma_dim = 1
 mod_dim = 1
 
 
-devices = [0]
+devices = [0,1,2,3,4,5,6,7]
 import sys
 sys.path.insert(0,'/home/ubuntu/BotSpot/featurization')
 
