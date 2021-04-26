@@ -1,4 +1,4 @@
-import featurization.mysql as mysql
+import mysql
 from collections import defaultdict
 import json
 import time
@@ -58,18 +58,18 @@ def word2vec(rows):
                          # skip gram
                          sg=1,
                          # window size
-                         window=3,
+                         window=4,
                          # number of parameters
-                         size=300,
+                         vector_size=500,
                          # downsample frequent words
                          sample=5e-5,
                          negative=20,
-                         workers=cores - 1,
+                         workers=cores - 2,
                          callbacks=[saver]
                      )
 
     t = time.time()
-    model.build_vocab(sentences, progress_per=10000)
+    model.build_vocab(sentences, progress_per=500)
 
     print('Time to build vocab: {} mins'.format(round((time.time() - t) / 60, 2)))
     model.save("vocab.model")

@@ -7,8 +7,9 @@ import pymysql.cursors
 connection = pymysql.connect(host='localhost',
                              user='root',
                              password='Qawsedrftg9!',
-                             db='reddit_data',
+                             db='reddit',
                              charset='utf8mb4',
+                             max_allowed_packet=1677721600,
                              cursorclass=pymysql.cursors.DictCursor)
 entry_batch  = []
 
@@ -51,9 +52,9 @@ def fetch_cleaned_users():
         rows = cursor.fetchall()
         return rows
 
-def store_cleaned(username, sub_tally, time_tally, tokens):
+def store_cleaned(username, sub_tally, tokens):
     global entry_batch
-    entry_batch.append((username, str(sub_tally), str(time_tally), str(tokens)))
+    entry_batch.append((username, str(sub_tally), str(tokens)))
 
     if(len(entry_batch) >= 100):
         store_batched()
@@ -64,7 +65,7 @@ def store_batched():
         print(
             "Committing %d entries to database, users (%s->%s)" % (len(entry_batch), entry_batch[0][0], entry_batch[-1][0]))
         with connection.cursor() as cursor:
-            sql = "INSERT IGNORE INTO cleaned (username, subreddit_arr, timestamp_arr, document) VALUES (%s, %s, %s, %s)"
+            sql = "INSERT IGNORE INTO cleaned (username, subreddit_arr, document) VALUES (%s, %s, %s)"
             cursor.executemany(sql, entry_batch)
             connection.commit()
             entry_batch = []

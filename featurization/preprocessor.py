@@ -5,7 +5,7 @@
 """
 
 from collections import OrderedDict
-from featurization import mysql
+import mysql
 import re
 import nltk
 import gensim
@@ -31,7 +31,7 @@ def init():
 
         # tally activity and consolidate into arrays
         activity = mysql.fetch_activity_for_user(username)
-        sub_tally, time_tally = tally(activity)
+        sub_tally = tally(activity)
 
         tokens = preprocess(activity)
 
@@ -40,7 +40,7 @@ def init():
         #print(sub_tally)
         #print(time_tally)
 
-        mysql.store_cleaned(username, sub_tally, time_tally, tokens)
+        mysql.store_cleaned(username, sub_tally, tokens)
 
         count+=1
 
@@ -72,21 +72,10 @@ def tally(activity):
         count = sub_tally.get(subreddit, 0)
         sub_tally[subreddit] = count+1
 
-        bucket = timestamp_to_bucket(entry['timestamp'])
-        time_tally[bucket] = time_tally.get(bucket, 0) + 1
-
     sub_tally = dict(OrderedDict(sorted(sub_tally.items())))
     # print(OrderedDict(sorted(time_tally.items())))
-
-    time_arr = []
-    for bucket in range(24*6):
-        time_arr.append(time_tally.get(bucket, 0))
-    return sub_tally, time_arr
-
-# converts epoch time to which 10 minute bucket
-def timestamp_to_bucket(timestamp):
-    # ignores which day it is, then divides by 600 seconds
-    return timestamp % 86400 // 600
+    
+    return sub_tally
 
 
 if __name__ == "__main__":
