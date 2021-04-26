@@ -1,19 +1,14 @@
-""" Computes the full feature vectors based on the time_model, word2vec model, and subreddits
+""" Computes the full feature vectors based on the word2vec model, and subreddits
 """
 import pymysql
 from collections import defaultdict
 import json
 import numpy as np
-from featurization import mysql
+import mysql
 import pickle
 from gensim.models import KeyedVectors
 from torch.utils.data import Dataset
 
-states = ["Alaska", "Alabama", "Arkansas", "Arizona", "California", "Colorado", "Connecticut", "District of Columbia", "Delaware", "Florida", "Georgia", "Hawaii", "Iowa", "Idaho", "Illinois", "Indiana", "Kansas", "Kentucky", "Louisiana", "Massachusetts", "Maryland", "Maine", "Michigan", "Minnesota", "Missouri", "Mississippi", "Montana", "North Carolina", "North Dakota", "Nebraska", "New Hampshire", "New Jersey", "New Mexico", "Nevada", "New York", "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah", "Virginia", "Vermont", "Washington", "Wisconsin", "West Virginia", "Wyoming"]
-
-state_subs = ["alaska", "Alabama", "Arkansas", "arizona", "California", "Colorado", "Connecticut", "washingtondc", "Delaware", "florida", "Georgia", "Hawaii", "Iowa", "Idaho", "illinois", "Indiana", "kansas", "Kentucky", "Louisiana", "massachusetts", "maryland", "Maine", "Michigan", "minnesota", "missouri", "mississippi", "Montana", "NorthCarolina", "northdakota", "Nebraska", "newhampshire", "newjersey", "NewMexico", "Nevada", "newyork", "Ohio", "oklahoma", "oregon", "Pennsylvania", "RhodeIsland", "southcarolina", "SouthDakota", "Tennessee", "texas", "Utah", "Virginia", "vermont", "Washington", "wisconsin", "WestVirginia", "wyoming"]
-
-discard_n = 300
 sub_n = 5000
 # takes in a subreddit_arr and converts it to the normalized indexed form
 # creates a sparse vector of subreddit activity
@@ -37,8 +32,8 @@ def tokenizer(arr_string):
 def process_document(w2v, doc):
     indices = []
     for token in tokenizer(doc):
-        if token in w2v.wv.vocab:
-            indices.append(w2v.wv.vocab.get(token).index)
+        if token in w2v.wv.key_to_index:
+            indices.append(w2v.wv.key_to_index[token])
     
     return indices
 
@@ -79,18 +74,19 @@ def gen_sub_dict():
     # sort most popular subreddits
     sorted_subs = sorted(tally.items(), key=lambda v: v[1])
     sorted_subs.reverse()
+    print(sorted_subs)
     
-    # remove 300 most popular subreddits and keep next top 5000 subreddits
-    sub_5k = sorted_subs[discard_n:discard_n+sub_n]
+    # keep next top 5000 subreddits
+    sub_5k = sorted_subs[:sub_n]
     sub_dict = dict([(sub_5k[i][0], i) for i in range(len(sub_5k))])
     
-    print("Kept a dict of the top %d->%d subreddits" % (discard_n, sub_n+discard_n))
+    print("Kept a dict of the top %d subreddits" % (sub_n))
     pickle.dump(sub_dict, open("sub_dict.p", "wb"))
     return sub_dict
     
 def load_data():
     # load w2v model
-    w2v = KeyedVectors.load('../models/full.model')
+    w2v = KeyedVectors.load('embeddings/full.model')
     
     # fetch users and cleaned tables
     cleaned_rows = mysql.fetch_all_cleaned();
@@ -99,8 +95,6 @@ def load_data():
     # map of user to (label, features) tuples
     data = dict()
     
-    # load time vectors
-    time_vectors = pickle.load(open("../models/prob_vectors.time", 'rb'))
     sub_dict = pickle.load(open("sub_dict.p", "rb"))
     
     # load username list
@@ -110,7 +104,7 @@ def load_data():
     
     
     for r in users_rows:        
-        data[r['username']] = {'location': r['location'], 'is_from_politics': r['is_from_politics']}
+        data[r['username']] = {'is_bot': r['is_bot'], 'karma': r['karma'], 'is_mod': r['is_mod']}
         
     count = 0
     for r in cleaned_rows:
@@ -123,30 +117,20 @@ def load_data():
         sub_v = normalized_subreddit_vector(subreddits, sub_dict)
         data[username]['subreddit_v'] = sub_v
         
-        if username in time_vectors:
-            data[username]['time_v'] = time_vectors[username]
-        
         count+=1
         if(count % 1000 == 0):
             print("Processed %d entries" % count)
             
     return data
-
-def write_chungus():
-    # lists that will eventually be turned into tensors and into the dataset
-    labels = []
-    words = []
-    subs = []
-    times = []
-    
     
 class ChungusSet(Dataset):
-    def __init__(self, words, subs, times, labels):
+    def __init__(self, words, subs, karmas, mods, labels):
         self.words = words
         self.subs = subs
-        self.times = times
         self.labels = labels
-        assert(len(words)== len(subs) and len(subs) == len(times) and len(times) == len(labels))
+        self.karmas = karmas
+        self.mods = mods
+        assert(len(words)== len(subs) and len(subs) == len(labels) and len(subs) == len(karmas) and len(mods) == len(karmas))
     
     def __len__(self):
         return len(self.words)
@@ -155,7 +139,7 @@ class ChungusSet(Dataset):
         #get images and labels here 
         #returned images must be tensor
         #labels should be int 
-        return self.words[idx], self.subs[idx] , self.times[idx], self.labels[idx] 
+        return self.words[idx], self.subs[idx] , self.karmas[idx] ,self.mods[idx],  self.labels[idx] 
         
 if __name__ == "__main__":
     gen_sub_dict()

@@ -6,12 +6,13 @@ import time
 import json
 import torch.nn as nn
 from  gensim.models import KeyedVectors
-from featurization import word2vec, featurizer
+import sys
+
+
+
 from torch.utils.data import DataLoader
-import geopy
 import torch.optim as optim
 from torch.utils.data import Dataset
-from featurization import featurizer
 # Set the device to use
 # CUDA refers to the GPU
 print("Let's use", torch.cuda.device_count(), "GPUs!")
@@ -19,25 +20,26 @@ print("Let's use", torch.cuda.device_count(), "GPUs!")
 ## Hyperparameters
 num_epochs = 100 
 batch_size = 256
-text_length = torch.ones([int(batch_size/8)])
+text_length = torch.ones([int(batch_size)])
 print(text_length)
 
-lstm_out_dim = 256
-n_output_classes = 51
+lstm_out_dim = 512
+n_output_classes = 2
 sub_dim = 5000
-time_dim = 6
+karma_dim = 1
+mod_dim = 1
 
+
+devices = [0]
 import sys
-sys.path.insert(0,'/home/ec2-user/ele574/ele574-project/featurization')
+sys.path.insert(0,'/home/ubuntu/BotSpot/featurization')
 
 device = torch.device("cuda:0") 
 
 def load_embedding():
     # load word2vec weights
-    EpochSaver = word2vec.EpochSaver
-    w2v = KeyedVectors.load_word2vec_format('./models/word2vec.model')
-
-    weights = torch.FloatTensor(w2v.vectors)
+    w2v = KeyedVectors.load('../featurization/embeddings/full.model')
+    weights = torch.FloatTensor(w2v.wv.vectors)
     embedding = nn.Embedding.from_pretrained(weights)
     
     return embedding
@@ -49,7 +51,7 @@ def init_model():
     model = Classifier(embedding)
     opt = optim.Adam(model.parameters())
     
-    parallel_model = nn.DataParallel(model, device_ids=[0,1,2,3,4,5,6,7])
+    parallel_model = nn.DataParallel(model, device_ids=devices)
     # move parallel model to device
     parallel_model=parallel_model.to(device)
 
@@ -60,11 +62,10 @@ def continue_training(epoch):
     checkpoint = torch.load(path)
     assert(checkpoint['epoch'] == epoch) 
    
-    
     embedding = load_embedding()
     model = Classifier(embedding)
     
-    parallel_model = nn.DataParallel(model, device_ids=[0,1,2,3,4,5,6,7])
+    parallel_model = nn.DataParallel(model, device_ids=devices)
     # move parallel model to device
     parallel_model=parallel_model.to(device)
     parallel_model.load_state_dict(checkpoint['state_dict'])
@@ -77,7 +78,7 @@ def continue_training(epoch):
 
 def train(model, opt, epoch):
     # load saved feature tensors
-    train_set = pickle.load(open("data/train_set.p", "rb"))
+    train_set = pickle.load(open("train_set.p", "rb"))
     
     # train_loader returns batches of training data. See how train_loader is used in the Trainer class later
     train_loader = DataLoader(dataset=train_set, batch_size=batch_size, shuffle=True,num_workers=30, drop_last = True)
@@ -98,7 +99,7 @@ class Classifier(nn.Module):
         super(Classifier, self).__init__()
 
         self.embedding = embedding
-        self.lstm = nn.LSTM(input_size=300,
+        self.lstm = nn.LSTM(input_size=500,
                             hidden_size=lstm_out_dim,
                             num_layers=1,
                             batch_first=True,
@@ -107,9 +108,9 @@ class Classifier(nn.Module):
         self.drop2 = nn.Dropout(p=0.8)
         self.drop3 = nn.Dropout(p=0.3)
         # TODO: increase dimensions
-        self.fc = nn.Linear(2*lstm_out_dim + sub_dim + time_dim, n_output_classes)
+        self.fc = nn.Linear(2*lstm_out_dim + sub_dim + karma_dim + mod_dim, n_output_classes)
 
-    def forward(self, words, subs, times, labels):
+    def forward(self, words, subs, karmas, mods, labels):
         x = self.embedding(words)
         x = self.drop(x)
         
@@ -123,7 +124,7 @@ class Classifier(nn.Module):
         # apply aggressive dropout on subs
         subs = self.drop3(subs) 
 
-        x = torch.cat((x, subs, times), dim=1)
+        x = torch.cat((x, subs, karmas, mods), dim=1)
         
         # TODO: concatenate with subreddit and metadata features
         x = self.fc(x)
@@ -147,12 +148,12 @@ class Trainer():
             start = time.time()
             epoch_loss = 0.0
             epoch_steps = 0
-            for (words, subs, times, labels) in self.train_loader:
+            for (words, subs, karmas, mods, labels) in self.train_loader:
                 # ACT10-Zero the gradient in the optimizer, i.e. self.optim
                 self.optim.zero_grad()
                 
                 # run the network on this input batch
-                output = self.net(words, subs, times, labels)
+                output = self.net(words, subs, karmas, mods, labels)
                 
                 # move labels to output cuda
                 labels = labels.to(output.device)
@@ -181,14 +182,14 @@ class Trainer():
 
 
 def evaluate_model(model):
-    test_set = pickle.load(open("data/test_set.p", "rb"))
+    test_set = pickle.load(open("test_set.p", "rb"))
     test_loader = DataLoader(dataset=test_set, batch_size=batch_size, shuffle=True,num_workers=30, drop_last=True)
 
     err=0
     tot = 0
     with torch.no_grad():
-        for (words, subs, times, labels) in test_loader:
-            output = model(words, subs, times, labels)
+        for (words, subs, karmas, mods, labels) in test_loader:
+            output = model(words, subs, karmas, mods, labels)
 
             # let the maximum index be our predicted class
             _, yh = torch.max(output, 1)
@@ -203,6 +204,19 @@ def evaluate_model(model):
     print('Accuracy of FC prediction on test digits: %5.2f%%' % (100-100 * err / tot))
 
 if __name__ == "__main__":
-    completed_model = continue_training(62)
-    evaluate_model(completed_model)
+    sys.path.append('../featurization/')
+    from featurizer import ChungusSet
+    init_model()
 
+class EpochSaver(CallbackAny2Vec):
+    '''Callback to save model after each epoch.'''
+    def __init__(self, path_prefix):
+        self.path_prefix = path_prefix
+        self.epoch = 0
+
+    def on_epoch_end(self, model):
+        filename = '{}_epoch{}.model'.format(self.path_prefix, self.epoch)
+        output_path = get_tmpfile(filename)
+        print("Saved %s" % filename)
+        model.save(output_path)
+        self.epoch += 1
