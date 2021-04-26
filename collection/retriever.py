@@ -54,7 +54,12 @@ class Retriever:
 
 
     def get_user_data(self, username):
+        print(username)
         redditor = self.reddit.redditor(username)
+
+
+        if(username == "IamKatieBorg" or username=="[deleted]"):
+            return (-1, -1)
 
         if(hasattr(redditor, "is_mod")):
             is_mod = redditor.is_mod

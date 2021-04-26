@@ -28,7 +28,6 @@ def insert_activity_entries(entries):
     c.executemany('INSERT INTO activity (username, timestamp, subreddit, content, is_post) VALUES (?, ?, ?,?,?)', entries)
     conn.commit()
 
-
 # get the set of users that have activity rows associated with them (i.e. done)
 def get_completed_users():
     c = conn.cursor()
