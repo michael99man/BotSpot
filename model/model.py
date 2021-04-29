@@ -7,7 +7,10 @@ import json
 import torch.nn as nn
 from  gensim.models import KeyedVectors
 import sys
+from gensim.models.callbacks import CallbackAny2Vec
 
+
+from sklearn.metrics import classification_report
 
 
 from torch.utils.data import DataLoader
@@ -20,7 +23,7 @@ print("Let's use", torch.cuda.device_count(), "GPUs!")
 ## Hyperparameters
 num_epochs = 100 
 batch_size = 256
-text_length = torch.ones([int(batch_size)])
+text_length = torch.ones([int(batch_size/8)])
 print(text_length)
 
 lstm_out_dim = 512
@@ -123,7 +126,12 @@ class Classifier(nn.Module):
        
         # apply aggressive dropout on subs
         subs = self.drop3(subs) 
-
+    
+    
+        ## convert 1d tensor to 2d
+        karmas = torch.unsqueeze(karmas, 1)
+        mods = torch.unsqueeze(mods, 1)
+        
         x = torch.cat((x, subs, karmas, mods), dim=1)
         
         # TODO: concatenate with subreddit and metadata features
@@ -187,20 +195,31 @@ def evaluate_model(model):
 
     err=0
     tot = 0
+    
+    target_names = ['Not Bot', 'Bot']
+    all_labels = []
+    all_predicted = []
+    
     with torch.no_grad():
         for (words, subs, karmas, mods, labels) in test_loader:
             output = model(words, subs, karmas, mods, labels)
-
+            
+            labels = labels.to(device)
             # let the maximum index be our predicted class
             _, yh = torch.max(output, 1)
 
             tot += labels.size(0)
+            
+            all_labels += labels.cpu().numpy().tolist()
+            all_predicted += yh.cpu().numpy().tolist()
 
             ## add to err number of missclassification, i.e. number of indices that
             ## yh and y are not equal
             ## note that y and yh are vectors of size = batch_size = (256 in our case)
             err += sum(list(map(lambda i: 1 if labels[i] != yh[i] else 0, range(len(labels)))))
-
+            
+    print(classification_report(all_labels, all_predicted, target_names=target_names))
+            
     print('Accuracy of FC prediction on test digits: %5.2f%%' % (100-100 * err / tot))
 
 if __name__ == "__main__":
